@@ -28,12 +28,12 @@ jobs:
           context: .
           push: true
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ github.ref_name }}   # bara metadata/label, påverkar inte vilken .pkl som laddas
           tags: |
             ghcr.io/tobias954/assignment3_maio:${{ github.ref_name }}
 
-      - name: Smoke Test
+      - name: Smoke Test (force known model file)
         run: |
-          docker run -d -p 8080:8080 ghcr.io/tobias954/assignment3_maio:${{ github.ref_name }}
+          docker run -d -p 8080:8080 -e MODEL_VERSION=v0.2 ghcr.io/tobias954/assignment3_maio:${{ github.ref_name }}
           sleep 5
           curl -f http://localhost:8080/health
