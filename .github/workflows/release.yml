@@ -30,10 +30,10 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
           tags: |
-            ghcr.io/${{ toLower(github.repository) }}:${{ github.ref_name }}
+            ghcr.io/tobias954/assignment3_maio:${{ github.ref_name }}
 
       - name: Smoke Test
         run: |
-          docker run -d -p 8080:8080 ghcr.io/${{ toLower(github.repository) }}:${{ github.ref_name }}
+          docker run -d -p 8080:8080 ghcr.io/tobias954/assignment3_maio:${{ github.ref_name }}
           sleep 5
           curl -f http://localhost:8080/health
