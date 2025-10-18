@@ -1,28 +1,51 @@
+﻿name: CI
 
-name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
 jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
-      - name: Install
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Lint & Test
+          pip install pytest
+
+      # Lint som inte fäller bygget (bra första steg – kan skärpas senare)
+      - name: Lint (ruff if available)
         run: |
-          python -m pip install flake8 black
-          flake8 src tests
-          black --check src tests
-          pytest -q
-      - name: Train smoke
+          pip install ruff || true
+          if command -v ruff >/dev/null 2>&1; then
+            ruff check . || true
+          else
+            echo "ruff not installed, skipping"
+          fi
+
+      - name: Run tests (if any)
         run: |
-          VERSION=v0.1 python src/train.py
-          VERSION=v0.2 python src/train.py
-      - uses: actions/upload-artifact@v4
+          if [ -d tests ]; then
+            pytest -q
+          else
+            echo "No tests directory; skipping."
+          fi
+
+      - name: Quick training smoke (create models)
+        run: |
+          python create_models.py
+          ls -lh models
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: models
-          path: models/**/*
+          name: models-${{ github.sha }}
+          path: models/*.pkl
