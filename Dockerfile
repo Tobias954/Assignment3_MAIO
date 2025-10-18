@@ -14,4 +14,10 @@ COPY --from=deps /opt/venv /opt/venv
 COPY src /app/app
 COPY models /app/models
 EXPOSE 8080
-CMD ["sh","-c","uvicorn app.main:app --host 0.0.0.0 --port 8080 --app-dir /app || uvicorn main:app --host 0.0.0.0 --port 8080 --app-dir /app/app"]
+CMD ["sh","-c","uvicorn app.main:app --host 0.0.0.0 --port 8080 --app-dir /app/src || uvicorn main:app --host 0.0.0.0 --port 8080 --app-dir /app/src"]
+# Copy application source
+COPY src /app/src
+COPY models /app/models
+
+# Ensure Python sees /app/src
+ENV PYTHONPATH=/app/src
