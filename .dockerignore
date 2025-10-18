@@ -6,4 +6,4 @@ __pycache__/
 notebooks/
 data/
 tests/
-# Viktigt: src/ och models/ ska INTE ignoreras
+# src/ och models/ får INTE ignoreras
