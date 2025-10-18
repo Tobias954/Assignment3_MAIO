@@ -1,0 +1,51 @@
+
+services:
+  mlflow:
+    image: python:3.11-slim
+    container_name: mlflow
+    working_dir: /srv
+    command: >
+      sh -c "pip install --no-cache-dir mlflow==2.16.0 &&
+             mlflow server --host 0.0.0.0 --port 5000
+             --backend-store-uri sqlite:///mlflow.db
+             --default-artifact-root /srv/mlruns"
+    ports:
+      - "5001:5000"   # avoid conflicts with local 5000
+    volumes:
+      - ./mlruns:/srv/mlruns
+      - ./mlflow.db:/srv/mlflow.db
+
+  notebook:
+    image: jupyter/minimal-notebook:python-3.11
+    container_name: notebook
+    environment:
+      - JUPYTER_TOKEN=mlops
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./:/home/jovyan/work
+    depends_on:
+      - mlflow
+
+  api_v02:
+    build:
+      context: .
+      args:
+        VERSION: v0.2
+    image: diabetes-risk:v0.2
+    environment:
+      - MODEL_VERSION=v0.2
+    ports:
+      - "8080:8080"
+
+  api_v01:
+    build:
+      context: .
+      args:
+        VERSION: v0.1
+    image: diabetes-risk:v0.1
+    environment:
+      - MODEL_VERSION=v0.1
+    ports:
+      - "8081:8080"

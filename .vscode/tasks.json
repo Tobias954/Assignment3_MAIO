@@ -1,0 +1,50 @@
+
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Train Model v0.1",
+      "type": "shell",
+      "command": "python src/train.py",
+      "options": { "env": { "VERSION": "v0.1" } },
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Train Model v0.2",
+      "type": "shell",
+      "command": "python src/train.py",
+      "options": { "env": { "VERSION": "v0.2" } },
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Docker Build v0.1",
+      "type": "shell",
+      "command": "docker build --build-arg VERSION=v0.1 -t diabetes-risk:v0.1 .",
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Docker Build v0.2",
+      "type": "shell",
+      "command": "docker build --build-arg VERSION=v0.2 -t diabetes-risk:v0.2 .",
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Docker Run v0.1 (8081)",
+      "type": "shell",
+      "command": "docker run --rm -p 8081:8080 -e MODEL_VERSION=v0.1 diabetes-risk:v0.1",
+      "group": "test",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Docker Run v0.2 (8080)",
+      "type": "shell",
+      "command": "docker run --rm -p 8080:8080 -e MODEL_VERSION=v0.2 diabetes-risk:v0.2",
+      "group": "test",
+      "presentation": { "reveal": "always" }
+    }
+  ]
+}
