@@ -14,3 +14,7 @@ __pycache__/
 
 # Tools
 .ipynb_checkpoints/
+
+# allow tracked model artifacts
+!models/
+!models/*.pkl

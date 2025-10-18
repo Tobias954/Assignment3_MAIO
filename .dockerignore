@@ -7,3 +7,7 @@ mlflow.db
 models/
 !models/v0.1/
 !models/v0.2/
+
+# keep models in image
+!models/
+!models/*.pkl
