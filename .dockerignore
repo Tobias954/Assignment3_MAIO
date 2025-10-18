@@ -1,13 +1,9 @@
-
+﻿.venv/
 __pycache__/
 *.pyc
-.venv/
-mlruns/
-mlflow.db
-models/
-!models/v0.1/
-!models/v0.2/
-
-# keep models in image
-!models/
-!models/*.pkl
+.git/
+*.ipynb
+notebooks/
+data/
+tests/
+# Viktigt: src/ och models/ ska INTE ignoreras
