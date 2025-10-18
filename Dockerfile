@@ -1,21 +1,21 @@
-
-FROM python:3.11-slim
-
-ARG VERSION=v0.2
-ENV VERSION=${VERSION} \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
+﻿# ---- deps ----
+FROM python:3.11-slim AS deps
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --upgrade pip \
+ && /opt/venv/bin/pip install -r requirements.txt
 
-COPY src ./src
-# Train and bake model into the image (models/<VERSION>)
-RUN python src/train.py
-
+# ---- runtime ----
+FROM python:3.11-slim
+WORKDIR /app
+ENV PATH="/opt/venv/bin:$PATH"
+COPY --from=deps /opt/venv /opt/venv
+# kopiera in API-kod + modeller (pkl-filerna måste finnas i repo)
+COPY app /app/app
+COPY models /app/models
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:8080/health || exit 1
-CMD ["uvicorn", "src.serve:app", "--host", "0.0.0.0", "--port", "8080"]
+# starta FastAPI med uvicorn (ändra om du använder annat kommando)
+CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8080"]
