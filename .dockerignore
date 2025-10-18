@@ -14,7 +14,7 @@ __pycache__/
 .gitignore
 .github/
 
-# Övrigt du inte vill med i bilden
+# Övrigt (ok att ignorera)
 tests/
 notebooks/
 *.ipynb
