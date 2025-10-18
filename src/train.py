@@ -1,25 +1,31 @@
-
-import os, json, joblib, numpy as np
+import json
+import os
 from pathlib import Path
+
+import joblib
+import numpy as np
 from sklearn.datasets import load_diabetes
+from sklearn.linear_model import LinearRegression, RidgeCV
+from sklearn.metrics import mean_squared_error, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression, RidgeCV
-from sklearn.metrics import mean_squared_error, precision_score, recall_score
 
 SEED = int(os.getenv("SEED", "42"))
 OUT_DIR = Path(os.getenv("OUT_DIR", "models"))
 VERSION = os.getenv("VERSION", "v0.2")
 
+
 def rmse(y_true, y_pred):
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
 
 def data():
     d = load_diabetes(as_frame=True)
     X = d.frame.drop(columns=["target"])
     y = d.frame["target"]
     return X, y
+
 
 def train_v01():
     X, y = data()
@@ -30,10 +36,16 @@ def train_v01():
     metrics = {"rmse": r, "seed": SEED, "model": "StandardScaler+LinearRegression"}
     return pipe, metrics, {}
 
+
 def train_v02():
     X, y = data()
     Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=SEED)
-    pipe = Pipeline([("scaler", StandardScaler()), ("ridge", RidgeCV(alphas=[0.1,1,10,100], cv=5))])
+    pipe = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("ridge", RidgeCV(alphas=[0.1, 1, 10, 100], cv=5)),
+        ]
+    )
     pipe.fit(Xtr, ytr)
     preds = pipe.predict(Xte)
     r = rmse(yte, preds)
@@ -57,11 +69,17 @@ def train_v02():
             "threshold_method": "p80_of_train_y",
             "threshold": threshold,
             "precision_at_threshold": prec,
-            "recall_at_threshold": rec
-        }
+            "recall_at_threshold": rec,
+        },
     }
-    meta = {"threshold": threshold, "method": "p80_of_train_y", "seed": SEED, "sigma": sigma}
+    meta = {
+        "threshold": threshold,
+        "method": "p80_of_train_y",
+        "seed": SEED,
+        "sigma": sigma,
+    }
     return pipe, metrics, meta
+
 
 if __name__ == "__main__":
     if VERSION == "v0.1":

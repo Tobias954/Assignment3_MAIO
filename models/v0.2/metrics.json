@@ -1,3 +1,12 @@
 {
-  "rmse": 53.85344583676594
+  "rmse": 53.62628756889519,
+  "seed": 42,
+  "model": "StandardScaler+RidgeCV",
+  "alpha": 10.0,
+  "threshold_metrics": {
+    "threshold_method": "p80_of_train_y",
+    "threshold": 235.0,
+    "precision_at_threshold": 0.6666666666666666,
+    "recall_at_threshold": 0.15384615384615385
+  }
 }

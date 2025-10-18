@@ -8,3 +8,7 @@ pandas==2.2.2
 pydantic==2.9.2
 pytest==8.3.2
 mlflow==2.16.0
+flake8
+black
+isort
+httpx

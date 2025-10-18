@@ -1,0 +1,16 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+
+# Virtual env
+.venv/
+
+# OS
+.DS_Store
+
+# Tools
+.ipynb_checkpoints/
