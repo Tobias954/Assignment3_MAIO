@@ -1,9 +1,20 @@
-﻿.venv/
+﻿# Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+
+# Venv & lokalt skräp
+.venv/
+.env
+*.sqlite3
+
+# Git/GH & dev
 .git/
-*.ipynb
-notebooks/
-data/
+.gitignore
+.github/
+
+# Övrigt du inte vill med i bilden
 tests/
-# src/ och models/ får INTE ignoreras
+notebooks/
+*.ipynb
