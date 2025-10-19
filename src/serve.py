@@ -1,129 +1,151 @@
-# src/serve.py
-import json
-import math
 import os
+import json
 from pathlib import Path
-from typing import Tuple, Dict, Any
+from typing import Dict, Optional, Tuple
 
 import joblib
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException, Header, Query
+from pydantic import BaseModel
 
-# ------------------------------------------------------------
-# Artefakt-platser (MODEL_VERSION sätts via env, t.ex. v0.2)
-# ------------------------------------------------------------
-MODEL_DIR = Path(os.getenv("MODEL_DIR", "models"))
-MODEL_VERSION = os.getenv("MODEL_VERSION", "v0.2")
-MODEL_PATH = MODEL_DIR / MODEL_VERSION / "model.joblib"
-METRICS_PATH = MODEL_DIR / MODEL_VERSION / "metrics.json"
-META_PATH = MODEL_DIR / MODEL_VERSION / "meta.json"
+APP_ROOT = Path(__file__).resolve().parents[1]
+MODELS_ROOT = APP_ROOT / "models"
 
-FEATURES = ["age", "sex", "bmi", "bp", "s1", "s2", "s3", "s4", "s5", "s6"]
+# Default version comes from env, but we do not hardcode names.
+DEFAULT_VERSION = os.getenv("MODEL_VERSION", "").strip() or None
 
+app = FastAPI(title="FastAPI", version="0.1.0")
 
-class PatientFeatures(BaseModel):
-    age: float = Field(..., description="Normalized age")
-    sex: float
-    bmi: float
-    bp: float
-    s1: float
-    s2: float
-    s3: float
-    s4: float
-    s5: float
-    s6: float
+# -------- Discover & lazy-load --------
+def discover_versions() -> Dict[str, Path]:
+    """Find all versions as subfolders under models/, e.g. models/v0.1/."""
+    versions = {}
+    if MODELS_ROOT.exists():
+        for p in MODELS_ROOT.iterdir():
+            if p.is_dir():
+                versions[p.name] = p
+    return versions
 
+AVAILABLE: Dict[str, Path] = discover_versions()
 
-def _load_json(path: Path) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+# Cache of loaded artefacts per version: {version: (model, scaler, meta)}
+_CACHE: Dict[str, Tuple[object, Optional[object], dict]] = {}
 
+def load_version(version: str) -> Tuple[object, Optional[object], dict]:
+    """Load artefacts for a given version (cached)."""
+    if version in _CACHE:
+        return _CACHE[version]
 
-def load_artifacts() -> Tuple[Any, Dict[str, Any], Dict[str, Any]]:
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"Model not found at {MODEL_PATH}")
-    model = joblib.load(MODEL_PATH)
+    if version not in AVAILABLE:
+        raise HTTPException(status_code=404, detail={
+            "error": "version_not_found",
+            "message": f"Requested version '{version}' not found.",
+            "available_versions": sorted(AVAILABLE.keys()),
+        })
 
-    metrics: Dict[str, Any] = {}
-    if METRICS_PATH.exists():
-        metrics = _load_json(METRICS_PATH)
+    vdir = AVAILABLE[version]
+    model_path = vdir / "model.joblib"
+    scaler_path = vdir / "scaler.joblib"
+    meta_path = vdir / "meta.json"  # if not present, we'll fallback
+    metrics_path = vdir / "metrics.json"
 
-    if not META_PATH.exists():
-        # Saknas meta => vi kan inte härleda threshold
-        raise FileNotFoundError(
-            f"Meta file not found at {META_PATH}. It must include a numeric 'threshold'."
-        )
-    meta = _load_json(META_PATH)
+    if not model_path.exists():
+        # Endpoint exists, but model not baked or trained
+        raise HTTPException(status_code=503, detail={
+            "error": "model_missing",
+            "message": f"Model artefact not found for version '{version}'. "
+                       f"Expected at {str(model_path)}.",
+        })
 
-    # Validera att threshold finns och är numerisk
-    if "threshold" not in meta:
-        raise KeyError(
-            f"'threshold' key missing in {META_PATH}. Add e.g. {{\"threshold\": 235}}"
-        )
-    try:
-        # Säkerställ float (om str i filen)
-        meta["threshold"] = float(meta["threshold"])
-    except Exception as e:
-        raise ValueError(
-            f"'threshold' in {META_PATH} must be numeric. Got: {meta.get('threshold')}"
-        ) from e
+    model = joblib.load(model_path)
+    scaler = joblib.load(scaler_path) if scaler_path.exists() else None
 
-    return model, metrics, meta
+    meta: dict = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+    elif metrics_path.exists():
+        # Some repos store metadata/threshold in metrics.json
+        try:
+            meta = json.loads(metrics_path.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
 
+    _CACHE[version] = (model, scaler, meta)
+    return _CACHE[version]
 
-def _sigmoid(x: float) -> float:
-    # Behövs om ni i framtiden vill använda mjuk score/klassificering
-    try:
-        return 1.0 / (1.0 + math.exp(-x))
-    except OverflowError:
-        return 0.0 if x < 0 else 1.0
+def resolve_version(request_version: Optional[str], header_version: Optional[str]) -> str:
+    """Pick version from query/header/env in a safe order, no hardcoding."""
+    # 1) explicit query ?version=
+    if request_version:
+        return request_version
+    # 2) header
+    if header_version:
+        return header_version
+    # 3) default from env or single available
+    if DEFAULT_VERSION:
+        return DEFAULT_VERSION
+    if len(AVAILABLE) == 1:
+        return next(iter(AVAILABLE.keys()))
+    # If none: ask client to specify
+    raise HTTPException(status_code=400, detail={
+        "error": "version_unspecified",
+        "message": "No default model version is set and multiple versions are available. "
+                   "Specify ?version=<name> or header X-Model-Version.",
+        "available_versions": sorted(AVAILABLE.keys()),
+    })
 
+# -------- Schemas --------
+class Features(BaseModel):
+    age: float; sex: float; bmi: float; bp: float
+    s1: float; s2: float; s3: float; s4: float; s5: float; s6: float
 
-app = FastAPI(title="Virtual Diabetes Clinic — Progression Risk Service")
-
-# Ladda artefakter vid uppstart
-MODEL, METRICS, META = load_artifacts()
-
-
+# -------- Endpoints --------
 @app.get("/health")
 def health():
-    # Exponera threshold från meta för transparens
     return {
         "status": "ok",
-        "model_version": MODEL_VERSION,
-        "metrics": METRICS,
-        "threshold": META.get("threshold"),
+        "default_version": DEFAULT_VERSION,
+        "available_versions": sorted(AVAILABLE.keys()),
     }
 
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Diabetes risk API"}
 
 @app.post("/predict")
-def predict(feats: PatientFeatures):
-    """
-    Returnerar:
-      {
-        "prediction": <float>,
-        "model_version": "<ver>",
-        "high_risk": <bool>   # True/False baserat på meta['threshold']
-      }
-    """
-    try:
-        X = [[getattr(feats, f) for f in FEATURES]]
-        pred = float(MODEL.predict(X)[0])
+def predict(
+    x: Features,
+    include_flag: bool = Query(default=False, description="Include risk flag/score when metadata provides threshold"),
+    version: Optional[str] = Query(default=None, description="Model version to use (e.g. v0.1, v0.2)"),
+    x_model_version: Optional[str] = Header(default=None, convert_underscores=False, alias="X-Model-Version"),
+):
+    # Determine version (query > header > env/default logic)
+    v = resolve_version(version, x_model_version)
 
-        thr = META["threshold"]  # garanterat numerisk från load_artifacts()
-        high = bool(pred >= thr)
+    # Load model/scaler/meta for that version
+    model, scaler, meta = load_version(v)
 
-        return {
-            "prediction": pred,
-            "model_version": MODEL_VERSION,
-            "high_risk": high,
-        }
-    except Exception as e:
-        # Klientvänligt felmeddelande
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "prediction_failed",
-                "message": str(e),
-            },
-        )
+    # Build input row
+    X = [[x.age, x.sex, x.bmi, x.bp, x.s1, x.s2, x.s3, x.s4, x.s5, x.s6]]
+    if scaler is not None:
+        X = scaler.transform(X)
+    y = float(model.predict(X)[0])
+
+    resp = {"prediction": y, "model_version": v}
+
+    if include_flag:
+        # Use threshold if provided, otherwise omit risk fields gracefully
+        threshold = meta.get("threshold")
+        if threshold is not None:
+            resp.update({
+                "risk_flag": y >= float(threshold),
+                "risk_score": y,
+                "threshold": float(threshold),
+            })
+        else:
+            # If no threshold, still valid response; we simply don't include flag fields.
+            pass
+
+    return resp
