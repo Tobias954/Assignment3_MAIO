@@ -1,12 +1,17 @@
+# src/serve.py
 import json
 import math
 import os
 from pathlib import Path
+from typing import Tuple, Dict, Any
 
 import joblib
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+# ------------------------------------------------------------
+# Artefakt-platser (MODEL_VERSION sätts via env, t.ex. v0.2)
+# ------------------------------------------------------------
 MODEL_DIR = Path(os.getenv("MODEL_DIR", "models"))
 MODEL_VERSION = os.getenv("MODEL_VERSION", "v0.2")
 MODEL_PATH = MODEL_DIR / MODEL_VERSION / "model.joblib"
@@ -29,63 +34,96 @@ class PatientFeatures(BaseModel):
     s6: float
 
 
-def load_artifacts():
+def _load_json(path: Path) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_artifacts() -> Tuple[Any, Dict[str, Any], Dict[str, Any]]:
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Model not found at {MODEL_PATH}")
     model = joblib.load(MODEL_PATH)
-    metrics = {}
+
+    metrics: Dict[str, Any] = {}
     if METRICS_PATH.exists():
-        with open(METRICS_PATH) as f:
-            metrics = json.load(f)
-    meta = {}
-    if META_PATH.exists():
-        with open(META_PATH) as f:
-            meta = json.load(f)
+        metrics = _load_json(METRICS_PATH)
+
+    if not META_PATH.exists():
+        # Saknas meta => vi kan inte härleda threshold
+        raise FileNotFoundError(
+            f"Meta file not found at {META_PATH}. It must include a numeric 'threshold'."
+        )
+    meta = _load_json(META_PATH)
+
+    # Validera att threshold finns och är numerisk
+    if "threshold" not in meta:
+        raise KeyError(
+            f"'threshold' key missing in {META_PATH}. Add e.g. {{\"threshold\": 235}}"
+        )
+    try:
+        # Säkerställ float (om str i filen)
+        meta["threshold"] = float(meta["threshold"])
+    except Exception as e:
+        raise ValueError(
+            f"'threshold' in {META_PATH} must be numeric. Got: {meta.get('threshold')}"
+        ) from e
+
     return model, metrics, meta
 
 
-app = FastAPI(title="Virtual Diabetes Clinic — Progression Risk Service")
-
-MODEL, METRICS, META = load_artifacts()
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "model_version": MODEL_VERSION, "metrics": METRICS}
-
-
 def _sigmoid(x: float) -> float:
+    # Behövs om ni i framtiden vill använda mjuk score/klassificering
     try:
         return 1.0 / (1.0 + math.exp(-x))
     except OverflowError:
         return 0.0 if x < 0 else 1.0
 
 
+app = FastAPI(title="Virtual Diabetes Clinic — Progression Risk Service")
+
+# Ladda artefakter vid uppstart
+MODEL, METRICS, META = load_artifacts()
+
+
+@app.get("/health")
+def health():
+    # Exponera threshold från meta för transparens
+    return {
+        "status": "ok",
+        "model_version": MODEL_VERSION,
+        "metrics": METRICS,
+        "threshold": META.get("threshold"),
+    }
+
+
 @app.post("/predict")
-def predict(
-    feats: PatientFeatures,
-    include_flag: bool = Query(
-        False, description="(v0.2) include risk_flag & risk_score"
-    ),
-):
+def predict(feats: PatientFeatures):
+    """
+    Returnerar:
+      {
+        "prediction": <float>,
+        "model_version": "<ver>",
+        "high_risk": <bool>   # True/False baserat på meta['threshold']
+      }
+    """
     try:
         X = [[getattr(feats, f) for f in FEATURES]]
         pred = float(MODEL.predict(X)[0])
-        resp = {"prediction": pred, "model_version": MODEL_VERSION}
-        # Optional flagging only for v0.2 with meta present
-        if include_flag and MODEL_VERSION == "v0.2" and META:
-            thr = float(META.get("threshold"))
-            sigma = float(META.get("sigma", 1.0))
-            score = _sigmoid((pred - thr) / sigma)
-            resp.update(
-                {
-                    "risk_flag": bool(pred >= thr),
-                    "risk_score": round(score, 4),
-                    "threshold": thr,
-                }
-            )
-        return resp
+
+        thr = META["threshold"]  # garanterat numerisk från load_artifacts()
+        high = bool(pred >= thr)
+
+        return {
+            "prediction": pred,
+            "model_version": MODEL_VERSION,
+            "high_risk": high,
+        }
     except Exception as e:
+        # Klientvänligt felmeddelande
         raise HTTPException(
-            status_code=400, detail={"error": "bad_request", "message": str(e)}
+            status_code=500,
+            detail={
+                "error": "prediction_failed",
+                "message": str(e),
+            },
         )
