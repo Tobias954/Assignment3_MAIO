@@ -1,0 +1,5 @@
+{
+  "rmse": 53.85344583676594,
+  "seed": 42,
+  "model": "StandardScaler+LinearRegression"
+}
